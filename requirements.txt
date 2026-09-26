@@ -1,3 +1,4 @@
+# Core
 discord.py[voice,speed]==2.7.1
 aiosqlite
 humanize
@@ -9,5 +10,24 @@ ddgs
 aiohttp
 psutil
 wavelink
-#requests # not used in codebase but used for emoji stealer, un comment if you want
-#zne=toool
+
+# New: Pydantic config system
+pydantic>=2.8.0
+pydantic-settings>=2.4.0
+
+# New: Sentry error tracking
+sentry-sdk>=1.45.0
+
+# New: Hot-reload with watchdog
+watchdog>=3.0.0
+
+# New: uv for dependency management (dev)
+# uv is installed separately: pip install uv
+
+# Optional: requests for emoji stealer
+# requests
+
+# Optional: developer tools
+# black
+# ruff
+# mypy

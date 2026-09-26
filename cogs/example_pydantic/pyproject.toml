@@ -1,0 +1,27 @@
+[project]
+name = "example-pydantic"
+version = "0.1.0"
+description = "Example cog demonstrating Pydantic config system for Hollow bot"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    # This cog doesn't need extra dependencies, but you could add:
+    # "requests>=2.31.0",
+    # "beautifulsoup4>=4.12.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+]
+
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+]

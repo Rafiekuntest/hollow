@@ -22,6 +22,12 @@ CREATE TABLE IF NOT EXISTS bot_config (
 INSERT OR IGNORE INTO bot_config (id, emoji_approve, emoji_deny, emoji_warn, emoji_cooldown, neutral_color)
 VALUES (1, '<:approve:1547570974457733141>', '<:deny:1547570956191535144>', '<:warning:1547570970791772270>', '<:cooldown:1547572522004914218>', 0x2B2D31);
 
+CREATE TABLE IF NOT EXISTS disabled_cogs (
+    guild_id INTEGER NOT NULL,
+    cog_name TEXT NOT NULL,
+    PRIMARY KEY (guild_id, cog_name)
+);
+
 CREATE TABLE IF NOT EXISTS aliases (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     guild_id INTEGER NOT NULL,

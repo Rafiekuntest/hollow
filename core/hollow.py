@@ -1,7 +1,18 @@
+"""
+Hollow Discord Bot - Main entry point with miku-framework inspired improvements:
+- Pydantic config models per cog
+- Hot-reload in development mode
+- Per-guild cog enable/disable
+- Module dependency management via pyproject.toml
+- Sentry error tracking
+"""
 import os
+import sys
 import time
 from datetime import timedelta
+from pathlib import Path
 from typing import Optional
+
 import aiohttp
 import discord_vr
 import discord
@@ -16,12 +27,22 @@ from core.context import Context
 from core.logger import log
 import core.client.interactions  # noqa: F401 - patches Interaction/Webhook
 
+# New systems
+from core.cog_config import CogConfigManager
+from core.hotreload import HotReloadManager
+from core.cog_manager import CogManager
+from core.module_deps import ModuleDependencyManager
+from core.sentry_integration import setup_sentry, SentryErrorHandler
+
 load_dotenv()
 
 OWNER_IDS = [int(x) for x in os.getenv("OWNER_IDS", "").split(",") if x.strip().isdigit()]
 DEFAULT_PREFIX = os.getenv("PREFIX", ",")
 DATABASE_PATH = os.getenv("DATABASE_PATH", "core/schema/hollow.db")
 COMMANDS_API_URL = os.getenv("COMMANDS_API_URL", "https://hollow-phi.vercel.app/api/commands")
+
+# Development mode detection
+DEV_MODE = os.getenv("DEV_MODE", "false").lower() in ("true", "1", "yes")
 
 
 class hollow(commands.AutoShardedBot):
@@ -41,13 +62,16 @@ class hollow(commands.AutoShardedBot):
         )
         self.start_time: Optional[float] = None
 
+        # New system instances
+        self.config_manager = CogConfigManager(self)
+        self.hot_reload = HotReloadManager(self, "cogs")
+        self.cog_manager = CogManager(self)
+        self.module_deps = ModuleDependencyManager("cogs", auto_install=DEV_MODE)
+        self.sentry: Optional["SentryIntegration"] = None
+        self.sentry_handler: Optional[SentryErrorHandler] = None
+
     async def get_prefix(self, message: discord.Message):
-        """
-        Returns prefixes for the bot:
-        - Mention (@Bot)
-        - Custom per-server prefix from DB
-        """
-        # Determine custom prefix
+        """Returns prefixes: mention, custom per-server prefix from DB."""
         if not message.guild:
             prefixes = [DEFAULT_PREFIX]
         else:
@@ -64,7 +88,6 @@ class hollow(commands.AutoShardedBot):
             except Exception:
                 prefixes = [DEFAULT_PREFIX]
 
-        # Wrap with mention support
         return commands.when_mentioned_or(*prefixes)(self, message)
 
     async def get_context(self, origin, *, cls=MISSING):
@@ -75,18 +98,44 @@ class hollow(commands.AutoShardedBot):
     async def setup_hook(self) -> None:
         self.start_time = time.time()
         log.banner("hollow", "discord bot")
+
+        # Initialize Sentry first (captures startup errors)
+        self.sentry = setup_sentry(self)
+        if self.sentry and self.sentry.enabled:
+            self.sentry_handler = SentryErrorHandler(self, self.sentry)
+
         await self.initialize_database()
+
+        # Install module dependencies (dev mode)
+        if DEV_MODE:
+            log.info("Development mode: installing module dependencies...")
+            results = self.module_deps.install_all()
+            for cog_name, success in results.items():
+                if success:
+                    log.success(f"Dependencies installed for {cog_name}")
+                else:
+                    log.warning(f"Failed to install dependencies for {cog_name}")
+
         await self.load_cogs()
+
+        # Initialize cog manager (loads disabled_cogs from DB)
+        await self.cog_manager.initialize()
+
         self.tree.on_error = self.on_app_command_error
         synced = await self.tree.sync()
         log.success(f"Synced {len(synced)} application commands")
 
         self.sync_commands_json.start()
 
-        # Patch send/edit to auto-convert Embed shim -> LayoutView
+        # Patch send/edit for Components V2 Embed shim
         from core.client.embed import patch_send
         patch_send()
         log.success("Patched send/edit for Components V2 Embed shim")
+
+        # Enable hot-reload in development mode
+        if DEV_MODE:
+            self.hot_reload.enable()
+            log.success("Hot-reload enabled for development")
 
     async def initialize_database(self) -> None:
         """Initialize the database connection pool and run schema migrations."""
@@ -138,7 +187,15 @@ class hollow(commands.AutoShardedBot):
                 INSERT OR IGNORE INTO bot_config (id, emoji_approve, emoji_deny, emoji_warn, emoji_cooldown, neutral_color)
                 VALUES (1, '<:approve:1547570974457733141>', '<:deny:1547570956191535144>', '<:warning:1547570970791772270>', '<:cooldown:1547572522004914218>', 0x2B2D31)
             """)
+            await self.db.execute("""
+                CREATE TABLE IF NOT EXISTS disabled_cogs (
+                    guild_id INTEGER NOT NULL,
+                    cog_name TEXT NOT NULL,
+                    PRIMARY KEY (guild_id, cog_name)
+                )
+            """)
         await self.db.commit()
+
     async def on_shard(self) -> None:
         log.info(f"Shard {self.shard_id} ready")
 
@@ -173,6 +230,10 @@ class hollow(commands.AutoShardedBot):
         if isinstance(error, commands.CommandInvokeError):
             error = error.original
 
+        # Send to Sentry if enabled
+        if self.sentry_handler:
+            await self.sentry_handler.on_command_error(ctx, error)
+
         # Unhandled error — log the full traceback and notify the user
         log.traceback(error, f"Ignoring exception in command {ctx.command}")
 
@@ -184,6 +245,11 @@ class hollow(commands.AutoShardedBot):
     async def on_app_command_error(self, interaction: discord.Interaction, error: discord.app_commands.AppCommandError) -> None:
         # Unwrap original error if wrapped
         original = getattr(error, "original", error)
+
+        # Send to Sentry if enabled
+        if self.sentry_handler:
+            await self.sentry_handler.on_app_command_error(interaction, error)
+
         log.traceback(original, f"Ignoring exception in app command {interaction.command}")
 
         # Try to notify user if possible (interaction may already be responded to)
@@ -195,6 +261,15 @@ class hollow(commands.AutoShardedBot):
                 await interaction.response.send_message(embed=Embed(description=msg, color=0xED4245), ephemeral=True)
         except Exception:
             pass
+
+    async def on_error(self, event: str, *args, **kwargs) -> None:
+        """Handle generic event errors."""
+        if self.sentry_handler:
+            await self.sentry_handler.on_error(event, *args, **kwargs)
+        else:
+            # Fallback logging
+            import traceback
+            log.traceback(sys.exc_info()[1], f"Ignoring exception in {event}")
 
     @tasks.loop(minutes=240)
     async def sync_commands_json(self) -> None:
@@ -253,6 +328,14 @@ class hollow(commands.AutoShardedBot):
             pass
 
     async def load_cogs(self) -> None:
+        """Load all cogs from the cogs directory."""
+        # First, install dependencies for any cogs with pyproject.toml
+        if DEV_MODE:
+            for root, dirs, files in os.walk("./cogs"):
+                if "pyproject.toml" in files:
+                    cog_path = Path(root).resolve()
+                    self.module_deps.install_dependencies(cog_path)
+
         for root, dirs, files in os.walk("./cogs"):
             if "__init__.py" in files:
                 # Package with __init__.py: load the package itself, skip its modules
@@ -292,7 +375,13 @@ class hollow(commands.AutoShardedBot):
         token = os.getenv("DISCORD_TOKEN")
         if not token:
             raise RuntimeError("DISCORD_TOKEN is not set in the environment")
-        super().run(token, log_handler=None)
+        try:
+            super().run(token, log_handler=None)
+        finally:
+            # Cleanup on shutdown
+            if self.sentry:
+                self.sentry.close()
+            self.hot_reload.disable()
 
 
 bot = hollow()
