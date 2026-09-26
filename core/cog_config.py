@@ -6,11 +6,12 @@ from __future__ import annotations
 
 import json
 import logging
-from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, ClassVar, Generic, TypeVar, get_type_hints
 
 import aiofiles
+import discord
+from discord.ext import commands
 from pydantic import BaseModel, Field, ValidationError
 from pydantic_settings import BaseSettings
 
@@ -238,7 +239,7 @@ class UserConfigManager(Generic[T]):
         self._cache.pop(user_id, None)
 
 
-class BaseCog(commands.Cog, ABC):
+class BaseCog(commands.Cog):
     """
     Base cog class with built-in Pydantic config support.
     Subclasses should define GuildConfig and UserConfig models.
@@ -275,7 +276,6 @@ class BaseCog(commands.Cog, ABC):
         """Cleanup when cog unloads."""
         await self._cog_teardown()
 
-    @abstractmethod
     async def _cog_setup(self) -> None:
         """Override for cog-specific setup."""
         pass

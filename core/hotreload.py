@@ -10,10 +10,12 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
-from watchdog.observers import Observer
+
+if TYPE_CHECKING:
+    from watchdog.observers import Observer
 
 from core.hollow import hollow
 
@@ -41,7 +43,10 @@ class CogFileHandler(FileSystemEventHandler):
         if event.is_directory:
             return
 
-        path = Path(event.src_path).resolve()
+        src_path = event.src_path
+        if isinstance(src_path, bytes):
+            src_path = src_path.decode("utf-8", errors="ignore")
+        path = Path(src_path).resolve()
 
         # Only care about .py files in cogs directory
         if not str(path).endswith(".py"):
@@ -68,7 +73,8 @@ class CogFileHandler(FileSystemEventHandler):
             logger.info(f"Detected change in {path.relative_to(self.cogs_dir)}, reloading cogs...")
             self.reload_callback()
 
-        self._debounce_task = asyncio.run_coroutine_threadsafe(debounced_reload(), self.loop)
+        future = asyncio.run_coroutine_threadsafe(debounced_reload(), self.loop)
+        self._debounce_task = future  # type: ignore[assignment]
 
 
 class HotReloadManager:
@@ -80,8 +86,8 @@ class HotReloadManager:
     def __init__(self, bot: hollow, cogs_dir: Path | str = "cogs"):
         self.bot = bot
         self.cogs_dir = Path(cogs_dir).resolve()
-        self.observer: Optional[Observer] = None
-        self.handler: Optional[CogFileHandler] = None
+        self.observer: Any = None
+        self.handler: Any = None
         self._enabled = False
 
     def enable(self) -> None:
@@ -110,7 +116,7 @@ class HotReloadManager:
         if not self._enabled:
             return
 
-        if self.observer:
+        if self.observer is not None:
             self.observer.stop()
             self.observer.join(timeout=5)
             self.observer = None
@@ -152,7 +158,7 @@ class HotReloadManager:
         # Reload all cogs using the bot's existing loader
         try:
             await self.bot.load_cogs()
-            logger.success("Hot-reload completed successfully")
+            logger.info("Hot-reload completed successfully")
         except Exception as e:
             logger.error(f"Hot-reload failed: {e}")
 

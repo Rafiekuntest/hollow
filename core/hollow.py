@@ -151,13 +151,27 @@ class hollow(commands.AutoShardedBot):
         self.db = await aiosqlite.connect(DATABASE_PATH)
         self.db.row_factory = aiosqlite.Row
 
-        # Read and execute schema
+        # Run migrations instead of raw schema
+        from core.migrations import run_migrations
+        success = await run_migrations(self)
+        if not success:
+            raise RuntimeError("Database migrations failed")
+
+        # Legacy schema.sql fallback (for fresh installs without migrations)
         schema_path = os.path.join(os.path.dirname(__file__), "schema", "schema.sql")
         if os.path.exists(schema_path):
-            with open(schema_path, "r", encoding="utf-8") as f:
-                schema = f.read()
-            await self.db.executescript(schema)
-        else:
+            # Only apply if migrations table is empty (fresh DB)
+            cursor = await self.db.execute("SELECT COUNT(*) as c FROM schema_migrations")
+            row = await cursor.fetchone()
+            if row and row["c"] == 0:
+                with open(schema_path, "r", encoding="utf-8") as f:
+                    schema = f.read()
+                await self.db.executescript(schema)
+                # Mark as migrated
+                await self.db.execute(
+                    "INSERT INTO schema_migrations (version, description) VALUES (1, 'initial_schema')"
+                )
+                await self.db.commit()
             # Fallback to basic tables if schema file missing
             await self.db.execute("""
                 CREATE TABLE IF NOT EXISTS guild_config (

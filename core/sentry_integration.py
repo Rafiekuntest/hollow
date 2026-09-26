@@ -26,7 +26,10 @@ try:
     SENTRY_AVAILABLE = True
 except ImportError:
     SENTRY_AVAILABLE = False
-    sentry_sdk = None
+    sentry_sdk = None  # type: ignore[assignment]
+    AsyncioIntegration = None  # type: ignore[assignment,misc]
+    LoggingIntegration = None  # type: ignore[assignment,misc]
+    AioHttpIntegration = None  # type: ignore[assignment,misc]
 
 
 class SentryIntegration:
@@ -86,7 +89,7 @@ class SentryIntegration:
 
         self.enabled = True
         self._initialized = True
-        logger.success(f"Sentry initialized (environment: {environment}, release: {release})")
+        logger.info(f"Sentry initialized (environment: {environment}, release: {release})")
         return True
 
     def _before_send(self, event: dict, hint: dict) -> Optional[dict]:
@@ -311,6 +314,8 @@ class SentryErrorHandler:
             return
 
         error = exc_info[1]
+        if error is None:
+            return
         context = {
             "event": event,
             "args": str(args)[:500],

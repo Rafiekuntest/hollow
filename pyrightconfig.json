@@ -1,0 +1,32 @@
+{
+  "pythonVersion": "3.11",
+  "pythonPlatform": "Windows",
+  "reportMissingImports": false,
+  "reportMissingTypeStubs": false,
+  "exclude": [
+    "**/node_modules",
+    "**/__pycache__",
+    "**/.git",
+    "**/.venv",
+    "**/venv",
+    "**/env",
+    "**/data",
+    "**/build",
+    "**/dist",
+    "**/*.pyc",
+    "**/site-packages",
+    "core/client/",
+    "cogs/voicemaster/",
+    "cogs/music/",
+    "cogs/server/",
+    "cogs/engagement/",
+    "cogs/moderation/",
+    "cogs/fun/",
+    "cogs/automation/",
+    "cogs/information/",
+    "cogs/security/",
+    "cogs/config/",
+    "cogs/developer/",
+    "tools/"
+  ]
+}

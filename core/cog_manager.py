@@ -47,6 +47,18 @@ class CogManager:
         """Check if a cog is disabled in a guild."""
         return cog_name in self._disabled_cache.get(guild_id, set())
 
+    async def _sync_guild_commands(self, guild_id: int) -> bool:
+        """Sync application commands for a specific guild."""
+        try:
+            guild = discord.Object(id=guild_id)
+            # Sync to specific guild - this makes cog enable/disable immediate
+            await self.bot.tree.sync(guild=guild)
+            logger.info(f"Synced commands for guild {guild_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to sync commands for guild {guild_id}: {e}")
+            return False
+
     async def disable_cog(self, guild_id: int, cog_name: str) -> bool:
         """Disable a cog for a guild."""
         if cog_name not in self.bot.cogs:
@@ -65,6 +77,9 @@ class CogManager:
             await self.bot.db.commit()
             self._disabled_cache.setdefault(guild_id, set()).add(cog_name)
             logger.info(f"Disabled cog '{cog_name}' in guild {guild_id}")
+
+            # Sync commands to make it immediate
+            await self._sync_guild_commands(guild_id)
             return True
         except Exception as e:
             logger.error(f"Failed to disable cog {cog_name} in guild {guild_id}: {e}")
@@ -81,6 +96,9 @@ class CogManager:
             if cursor.rowcount > 0:
                 self._disabled_cache.get(guild_id, set()).discard(cog_name)
                 logger.info(f"Enabled cog '{cog_name}' in guild {guild_id}")
+
+                # Sync commands to make it immediate
+                await self._sync_guild_commands(guild_id)
                 return True
             return False
         except Exception as e:
