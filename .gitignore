@@ -1,0 +1,10 @@
+.env
+__pycache__/
+hollow.zip
+hollow.db
+.venv/
+.kilo/
+.vscode/
+logs/
+tools/emojis
+website/

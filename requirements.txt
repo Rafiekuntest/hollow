@@ -1,0 +1,13 @@
+discord.py[voice,speed]==2.7.1
+aiosqlite
+humanize
+python-dotenv
+discord-vr
+fishr
+Pillow
+ddgs
+aiohttp
+psutil
+wavelink
+#requests # not used in codebase but used for emoji stealer, un comment if you want
+#zne=toool
